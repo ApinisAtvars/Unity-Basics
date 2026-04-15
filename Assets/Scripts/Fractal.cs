@@ -58,11 +58,11 @@ public class Fractal : MonoBehaviour
         }
     }
 
-    [SerializeField, Range(2, 8)]
+    [SerializeField, Range(3, 8)]
     private int depth = 4;
 
     [SerializeField]
-    private Mesh mesh;
+    private Mesh mesh, leafMesh;
 
     [SerializeField]
     private Material material;
@@ -115,6 +115,8 @@ public class Fractal : MonoBehaviour
 
     [SerializeField]
     private Gradient gradientA, gradientB;
+    [SerializeField]
+	private Color leafColorA, leafColorB;
     private Vector4[] sequenceNumbers;
 
 
@@ -142,7 +144,7 @@ public class Fractal : MonoBehaviour
             matrices[i] = new NativeArray<float3x4>(length, Allocator.Persistent);
             matricesBuffers[i] = new ComputeBuffer(length, stride);
 
-            sequenceNumbers[i] = new Vector4(Random.value, Random.value);
+            sequenceNumbers[i] = new Vector4(Random.value, Random.value, Random.value, Random.value);
         }
 
         parts[0][0] = CreatePart(0);
@@ -226,14 +228,27 @@ public class Fractal : MonoBehaviour
         jobHandle.Complete();
 
         var bounds = new Bounds(rootPart.worldPosition, 3f * objectScale * Vector3.one);
+        int leafIndex = matricesBuffers.Length - 1;
         for (int i = 0; i < matricesBuffers.Length; i++)
         {
             ComputeBuffer buffer = matricesBuffers[i];
             buffer.SetData(matrices[i]);
-            // Evaluate both gradients and set the propertyBlock colors
-            float gradientInterpolator = i / (matricesBuffers.Length - 1f);
-			propertyBlock.SetColor(colorAId, gradientA.Evaluate(gradientInterpolator));
-			propertyBlock.SetColor(colorBId, gradientB.Evaluate(gradientInterpolator));
+
+            Color colorA, colorB;
+            Mesh instanceMesh;
+			if (i == leafIndex) {
+				colorA = leafColorA;
+				colorB = leafColorB;
+                instanceMesh = leafMesh;
+			}
+			else {
+				float gradientInterpolator = i / (matricesBuffers.Length - 2f);
+				colorA = gradientA.Evaluate(gradientInterpolator);
+				colorB = gradientB.Evaluate(gradientInterpolator);
+                instanceMesh = mesh;
+			}
+			propertyBlock.SetColor(colorAId, colorA);
+			propertyBlock.SetColor(colorBId, colorB);
             // By passing this as an extra argument for DrawMeshInstanedProcedural,
             // it makes Unity copy the configuration that this block has at this specific time
             // thus solving the issue of all layers being rendered using the meshes of the final layer.
@@ -242,7 +257,7 @@ public class Fractal : MonoBehaviour
             propertyBlock.SetVector(sequenceNumbersId, sequenceNumbers[i]);
 
             Graphics.DrawMeshInstancedProcedural(
-                mesh, 0, material, bounds, buffer.count, propertyBlock
+                instanceMesh, 0, material, bounds, buffer.count, propertyBlock
             );
         }
     }
