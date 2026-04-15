@@ -16,7 +16,7 @@ public class Fractal : MonoBehaviour
     [BurstCompile(FloatPrecision.Standard, FloatMode.Fast, CompileSynchronously = true)] // This actually gives performance impact that jobs can provide
     private struct UpdateFractalLevelJob : IJobFor
     {
-        public float spinAngleDelta;
+        public float deltaTime;
 		public float scale;
 
         [ReadOnly] // Not needed but used to explicitly indicate this
@@ -33,13 +33,27 @@ public class Fractal : MonoBehaviour
             FractalPart parent = parents[i / 5];
             FractalPart part = parts[i];
 
-            part.spinAngle += spinAngleDelta;
+            part.spinAngle += part.spinVelocity * deltaTime;
 
+            // This is needed for the parts to sag down
+            // Fnd the up axis by rotating the up vector by the part's initial world rotation
+            float3 upAxis = mul(mul(parent.worldRotation, part.rotation), up());
+            float3 sagAxis = cross(up(), upAxis);
+            float sagMagnitude = length(sagAxis);
+			quaternion baseRotation;
+			if (sagMagnitude > 0f) {
+				sagAxis /= sagMagnitude;
+				quaternion sagRotation = quaternion.AxisAngle(sagAxis, part.maxSagAngle * sagMagnitude);
+				baseRotation = mul(sagRotation, parent.worldRotation);
+			}
+			else {
+				baseRotation = parent.worldRotation; // Otherwise, the magnitude is also 0 and the top disappears
+			}
             // For Quaternions, rotation stacking is weird as hell
             // If you do it like this (correctly), the child gets rotated first\
             // and then the parent gets rotated. odd...
             part.worldRotation = 
-                mul(parent.worldRotation,
+                mul(baseRotation,
                 mul(part.rotation
                     ,quaternion.Euler(0f, part.spinAngle, 0f)));
 
@@ -47,9 +61,7 @@ public class Fractal : MonoBehaviour
             
             part.worldPosition = 
                 parent.worldPosition 
-                + mul(parent.worldRotation // Parent's rotation should affect the direction of the child's offset.
-                , (1.5f * scale
-                    * part.direction));
+                + mul(part.worldRotation, float3(0f, 1.5f * scale, 0f));
 
             parts[i] = part;
 
@@ -67,11 +79,6 @@ public class Fractal : MonoBehaviour
     [SerializeField]
     private Material material;
 
-    private static float3[] directions =
-    {
-        up(), right(), left(), forward(), back()
-    };
-
     private static quaternion[] rotations =
     {
         quaternion.identity,
@@ -88,11 +95,11 @@ public class Fractal : MonoBehaviour
     private struct FractalPart
     {
         // public here only exposes the fields inside Fractal scope because the struct is still private
-        public float3 direction, worldPosition;
+        public float3 worldPosition;
         public quaternion rotation, worldRotation;
         // To start with a fresh quaternion each update
         // so that the floating point errors of tiny rotations don't accumulate.
-        public float spinAngle;
+        public float maxSagAngle, spinAngle, spinVelocity;
     }
 
     // Give all parts on the same level their own array, an array of arrays
@@ -119,10 +126,17 @@ public class Fractal : MonoBehaviour
 	private Color leafColorA, leafColorB;
     private Vector4[] sequenceNumbers;
 
+    [SerializeField, Range(0f, 90f)]
+	float maxSagAngleA = 15f, maxSagAngleB = 25f;
+
+    [SerializeField, Range(0f, 90f)]
+	float spinVelocityA = 20f, spinVelocityB = 25f;
+
 
     FractalPart CreatePart (int childIndex) => new FractalPart {
-		direction = directions[childIndex],
-		rotation = rotations[childIndex]
+        maxSagAngle = radians(Random.Range(maxSagAngleA, maxSagAngleB)),
+		rotation = rotations[childIndex],
+		spinVelocity = radians(Random.Range(spinVelocityA, spinVelocityB))
 	};
 
     void OnEnable()
@@ -189,11 +203,11 @@ public class Fractal : MonoBehaviour
 
     void Update()
     {
-        float spinAngleDelta = 0.125f * PI * Time.deltaTime;
+        float deltaTime = Time.deltaTime;
 
         FractalPart rootPart = parts[0][0];
 
-        rootPart.spinAngle += spinAngleDelta;
+        rootPart.spinAngle += rootPart.spinVelocity * deltaTime;
         // Parentheses needed because you first apply the quaternion, then the root part's rotation, then the transform's rotation
         rootPart.worldRotation = 
             mul(transform.rotation
@@ -213,7 +227,7 @@ public class Fractal : MonoBehaviour
             scale *= 0.5f;
 
             jobHandle = new UpdateFractalLevelJob {
-                spinAngleDelta = spinAngleDelta,
+                deltaTime = deltaTime,
                 scale = scale,
                 parents = parts[li - 1],
                 parts = parts[li],
