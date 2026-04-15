@@ -105,15 +105,16 @@ public class Fractal : MonoBehaviour
     ComputeBuffer[] matricesBuffers;
     private static readonly int 
         matricesId = Shader.PropertyToID("_Matrices"),
-        baseColorId = Shader.PropertyToID("_BaseColor"),
-        sequenceNumbersId = Shader.PropertyToID("_SequenceNumbers");
+        sequenceNumbersId = Shader.PropertyToID("_SequenceNumbers"),
+        colorAId = Shader.PropertyToID("_ColorA"),
+        colorBId = Shader.PropertyToID("_ColorB");
     // Needed for linking each buffer to a specific draw command.
     // Otherwise, all levels get rendered using the matrices of the last level,
     // thus rendering only the last level however many times
     private static MaterialPropertyBlock propertyBlock;
 
     [SerializeField]
-    private Gradient gradient;
+    private Gradient gradientA, gradientB;
     private Vector4[] sequenceNumbers;
 
 
@@ -229,11 +230,10 @@ public class Fractal : MonoBehaviour
         {
             ComputeBuffer buffer = matricesBuffers[i];
             buffer.SetData(matrices[i]);
-            // This will make the first layer black and last level white
-            propertyBlock.SetColor(
-				baseColorId, 
-                gradient.Evaluate(i / (matricesBuffers.Length - 1f))
-			);
+            // Evaluate both gradients and set the propertyBlock colors
+            float gradientInterpolator = i / (matricesBuffers.Length - 1f);
+			propertyBlock.SetColor(colorAId, gradientA.Evaluate(gradientInterpolator));
+			propertyBlock.SetColor(colorBId, gradientB.Evaluate(gradientInterpolator));
             // By passing this as an extra argument for DrawMeshInstanedProcedural,
             // it makes Unity copy the configuration that this block has at this specific time
             // thus solving the issue of all layers being rendered using the meshes of the final layer.
