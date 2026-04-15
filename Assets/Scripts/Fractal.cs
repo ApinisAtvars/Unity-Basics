@@ -8,6 +8,7 @@ using UnityEngine;
 using static Unity.Mathematics.math;
 
 using quaternion = Unity.Mathematics.quaternion;
+using Random = UnityEngine.Random;
 
 public class Fractal : MonoBehaviour
 {
@@ -104,7 +105,8 @@ public class Fractal : MonoBehaviour
     ComputeBuffer[] matricesBuffers;
     private static readonly int 
         matricesId = Shader.PropertyToID("_Matrices"),
-        baseColorId = Shader.PropertyToID("_BaseColor");
+        baseColorId = Shader.PropertyToID("_BaseColor"),
+        sequenceNumbersId = Shader.PropertyToID("_SequenceNumbers");
     // Needed for linking each buffer to a specific draw command.
     // Otherwise, all levels get rendered using the matrices of the last level,
     // thus rendering only the last level however many times
@@ -112,6 +114,7 @@ public class Fractal : MonoBehaviour
 
     [SerializeField]
     private Gradient gradient;
+    private Vector4[] sequenceNumbers;
 
 
     FractalPart CreatePart (int childIndex) => new FractalPart {
@@ -121,6 +124,8 @@ public class Fractal : MonoBehaviour
 
     void OnEnable()
     {
+        sequenceNumbers = new Vector4[depth];
+
         parts = new NativeArray<FractalPart>[depth];
         matrices = new NativeArray<float3x4>[depth];
 
@@ -135,6 +140,8 @@ public class Fractal : MonoBehaviour
             parts[i] = new NativeArray<FractalPart>(length, Allocator.Persistent);
             matrices[i] = new NativeArray<float3x4>(length, Allocator.Persistent);
             matricesBuffers[i] = new ComputeBuffer(length, stride);
+
+            sequenceNumbers[i] = new Vector4(Random.value, Random.value);
         }
 
         parts[0][0] = CreatePart(0);
@@ -164,6 +171,7 @@ public class Fractal : MonoBehaviour
         parts = null;
         matrices = null;
         matricesBuffers = null;
+        sequenceNumbers = null;
     }
 
     // This enables changing the fractal depth via inspector while in play mode
@@ -230,6 +238,9 @@ public class Fractal : MonoBehaviour
             // it makes Unity copy the configuration that this block has at this specific time
             // thus solving the issue of all layers being rendered using the meshes of the final layer.
             propertyBlock.SetBuffer(matricesId, buffer);
+
+            propertyBlock.SetVector(sequenceNumbersId, sequenceNumbers[i]);
+
             Graphics.DrawMeshInstancedProcedural(
                 mesh, 0, material, bounds, buffer.count, propertyBlock
             );
