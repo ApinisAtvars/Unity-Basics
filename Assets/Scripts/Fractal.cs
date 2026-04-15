@@ -57,7 +57,7 @@ public class Fractal : MonoBehaviour
         }
     }
 
-    [SerializeField, Range(1, 8)]
+    [SerializeField, Range(2, 8)]
     private int depth = 4;
 
     [SerializeField]
@@ -66,12 +66,12 @@ public class Fractal : MonoBehaviour
     [SerializeField]
     private Material material;
 
-    static float3[] directions =
+    private static float3[] directions =
     {
         up(), right(), left(), forward(), back()
     };
 
-    static quaternion[] rotations =
+    private static quaternion[] rotations =
     {
         quaternion.identity,
         quaternion.RotateZ(-0.5f * PI), quaternion.RotateZ(0.5f * PI),
@@ -84,7 +84,7 @@ public class Fractal : MonoBehaviour
 
     To do this, we need to keep track of the data for all parts in a single component.
     */
-    struct FractalPart
+    private struct FractalPart
     {
         // public here only exposes the fields inside Fractal scope because the struct is still private
         public float3 direction, worldPosition;
@@ -102,13 +102,16 @@ public class Fractal : MonoBehaviour
 
     // Since we don't store transforms, it's our job now to send matrices to GPU to render them
     ComputeBuffer[] matricesBuffers;
-    static readonly int matricesId = Shader.PropertyToID("_Matrices");
+    private static readonly int 
+        matricesId = Shader.PropertyToID("_Matrices"),
+        baseColorId = Shader.PropertyToID("_BaseColor");
     // Needed for linking each buffer to a specific draw command.
     // Otherwise, all levels get rendered using the matrices of the last level,
     // thus rendering only the last level however many times
-    static MaterialPropertyBlock propertyBlock;
+    private static MaterialPropertyBlock propertyBlock;
 
-
+    [SerializeField]
+    private Gradient gradient;
 
 
     FractalPart CreatePart (int childIndex) => new FractalPart {
@@ -218,11 +221,15 @@ public class Fractal : MonoBehaviour
         {
             ComputeBuffer buffer = matricesBuffers[i];
             buffer.SetData(matrices[i]);
+            // This will make the first layer black and last level white
+            propertyBlock.SetColor(
+				baseColorId, 
+                gradient.Evaluate(i / (matricesBuffers.Length - 1f))
+			);
             // By passing this as an extra argument for DrawMeshInstanedProcedural,
             // it makes Unity copy the configuration that this block has at this specific time
             // thus solving the issue of all layers being rendered using the meshes of the final layer.
             propertyBlock.SetBuffer(matricesId, buffer);
-            // material.SetBuffer(matricesId, buffer);
             Graphics.DrawMeshInstancedProcedural(
                 mesh, 0, material, bounds, buffer.count, propertyBlock
             );
